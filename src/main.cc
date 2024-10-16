@@ -17,8 +17,10 @@ enum MetaCommandResult {
 };
 enum PrepareResult {
   PREPARE_SUCCESS,
-  PREPARE_UNRECOGNIZED_STATEMENT,
+  PREPARE_NEGATIV_ID,
+  PREPARE_STRING_TOO_LONG,
   PREPARE_SYNTAX_ERROR,
+  PREPARE_UNRECOGNIZED_STATEMENT,
 };
 enum ExecuteResult {
   EXECUTE_SUCCESS,
@@ -36,8 +38,8 @@ enum StatementType {
 
 struct Row {
   uint32_t id;
-  char username[COLUMN_USERNAME_SIZE];
-  char email[COLUMN_EMAIL_SIZE];
+  char username[COLUMN_USERNAME_SIZE + 1];
+  char email[COLUMN_EMAIL_SIZE + 1];
 };
 
 #define size_of_attribute(Struct, Attribute) \
@@ -136,15 +138,27 @@ PrepareResult prepare_statement(InputBuffer* input_buffer, Statement* statement)
 {
   if (strutil::startsWith(input_buffer->buffer, "insert")) {
     statement->type = STATEMENT_INSERT;
-    int args_assigned = sscanf(
-        input_buffer->buffer.c_str(),
-        "insert %d %s %s",
-        &(statement->row_to_insert.id),
-        statement->row_to_insert.username,
-        statement->row_to_insert.email);
-    if (args_assigned < 3) {
+    char* keyword = strtok(&input_buffer->buffer[0], " ");
+    char* id_string = strtok(NULL, " ");
+    char* username = strtok(NULL, " ");
+    char* email = strtok(NULL, " ");
+    if (id_string == nullptr || username == nullptr || email == nullptr) {
       return PREPARE_SYNTAX_ERROR;
     }
+
+    int id = atoi(id_string);
+    if (id < 0) {
+      return PREPARE_NEGATIV_ID;
+    }
+    if (strlen(username) > COLUMN_USERNAME_SIZE) {
+      return PREPARE_STRING_TOO_LONG;
+    }
+    if (strlen(email) > COLUMN_EMAIL_SIZE) {
+      return PREPARE_STRING_TOO_LONG;
+    }
+    statement->row_to_insert.id = id;
+    strcpy(statement->row_to_insert.username, username);
+    strcpy(statement->row_to_insert.email, email);
     return PREPARE_SUCCESS;
   }
   if (strutil::startsWith(input_buffer->buffer, "select")) {
@@ -236,6 +250,12 @@ int main(int argc, char** argv)
     switch (prepare_statement(input_buffer, &statement)) {
       case PREPARE_SUCCESS:
       break;
+      case PREPARE_NEGATIV_ID:
+      printf("ID must be positive.\n");
+      continue;
+      case PREPARE_STRING_TOO_LONG:
+      printf("String is too long.\n");
+      continue;
       case PREPARE_SYNTAX_ERROR:
       printf("Syntax error. Could not parse statement.\n");
       continue;
